@@ -1,0 +1,25 @@
+# Core Pipecat with all required service extras
+pipecat-ai[livekit,deepgram,cartesia,google,silero]>=0.0.49
+
+# Google Generative AI SDK (used by Pipecat's GoogleLLMService)
+google-generativeai>=0.8.0
+
+# FastAPI server for token generation and bot dispatch
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# JWT token generation for LiveKit (no livekit-api needed — avoids namespace conflicts)
+PyJWT>=2.8.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# Pydantic for tool schemas
+pydantic>=2.0.0
+
+# Async HTTP
+httpx>=0.27.0
+aiohttp>=3.9.0
+
+# gRPC transport used by google-generativeai
+grpcio>=1.60.0

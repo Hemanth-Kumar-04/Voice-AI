@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AquaBot – Plumbing Support</title>
+  <meta name="description" content="Voice-powered plumbing maintenance helpdesk for your gated community" />
+
+  <!-- LiveKit Client SDK (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+
+  <style>
+    /* ── Design tokens ────────────────────────────────────────────────────── */
+    :root {
+      --bg:       #0b0f1a;
+      --surface:  #131929;
+      --border:   #1e2a42;
+      --accent:   #2563eb;
+      --accent2:  #38bdf8;
+      --danger:   #ef4444;
+      --success:  #22c55e;
+      --warn:     #f59e0b;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --radius:   14px;
+      --shadow:   0 8px 32px rgba(0,0,0,.55);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 24px;
+      background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(37,99,235,.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 20%, rgba(56,189,248,.06) 0%, transparent 60%);
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    .header {
+      text-align: center;
+    }
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .logo-icon {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 0 24px rgba(37,99,235,.4);
+    }
+    .logo-text {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #e2e8f0, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .tagline { color: var(--muted); font-size: .95rem; }
+
+    /* ── Card ─────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 36px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── Visualizer / orb ─────────────────────────────────────────────────── */
+    .orb-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+    .orb {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 35%,
+        rgba(56,189,248,.35) 0%,
+        rgba(37,99,235,.2) 50%,
+        rgba(11,15,26,.9) 100%);
+      border: 2px solid rgba(56,189,248,.2);
+      box-shadow:
+        0 0 40px rgba(37,99,235,.2),
+        inset 0 0 30px rgba(56,189,248,.08);
+      transition: box-shadow .3s, transform .3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .orb::after {
+      content: '🔧';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+    .orb.listening {
+      animation: pulse-listen 1.2s ease-in-out infinite;
+      border-color: rgba(56,189,248,.6);
+      box-shadow:
+        0 0 60px rgba(56,189,248,.4),
+        0 0 120px rgba(37,99,235,.2),
+        inset 0 0 40px rgba(56,189,248,.15);
+    }
+    .orb.speaking {
+      animation: pulse-speak 0.6s ease-in-out infinite;
+      border-color: rgba(34,197,94,.5);
+      box-shadow:
+        0 0 60px rgba(34,197,94,.3),
+        0 0 100px rgba(37,99,235,.2),
+        inset 0 0 30px rgba(34,197,94,.1);
+    }
+    @keyframes pulse-listen {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 60px rgba(56,189,248,.4); }
+      50%       { transform: scale(1.06); box-shadow: 0 0 90px rgba(56,189,248,.6); }
+    }
+    @keyframes pulse-speak {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.04); }
+    }
+
+    /* ── Status badge ─────────────────────────────────────────────────────── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .3s;
+    }
+    .status-dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.connecting { background: var(--warn); box-shadow: 0 0 6px var(--warn); animation: blink .8s infinite; }
+    .status-dot.error { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    #status-text { font-size: .9rem; color: var(--muted); }
+
+    /* ── Audio status ─────────────────────────────────────────────────────── */
+    .audio-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .audio-badge {
+      background: rgba(0,0,0,.25);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: .8rem;
+      color: var(--muted);
+    }
+    .audio-badge.ok { color: var(--success); border-color: rgba(34,197,94,.3); }
+    .audio-badge.warn { color: var(--warn); border-color: rgba(245,158,11,.3); }
+    .audio-badge.err { color: var(--danger); border-color: rgba(239,68,68,.3); }
+    .btn-audio { flex: none; width: auto; padding: 8px 12px; font-size: .8rem; }
+
+    /* ── Transcript ───────────────────────────────────────────────────────── */
+    .transcript-box {
+      background: rgba(0,0,0,.25);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      min-height: 80px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: .875rem;
+      line-height: 1.6;
+      color: var(--muted);
+      margin-bottom: 24px;
+      scroll-behavior: smooth;
+    }
+    .transcript-box:empty::before {
+      content: 'Conversation will appear here…';
+      color: #334155;
+      font-style: italic;
+    }
+    .msg { margin-bottom: 6px; }
+    .msg.user   { color: var(--accent2); }
+    .msg.agent  { color: #94a3b8; }
+    .msg .label { font-weight: 600; margin-right: 6px; }
+
+    /* ── Buttons ──────────────────────────────────────────────────────────── */
+    .btn-row {
+      display: flex;
+      gap: 12px;
+    }
+    .btn {
+      flex: 1;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #1d4ed8);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(37,99,235,.35);
+    }
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 6px 24px rgba(37,99,235,.55);
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(239,68,68,.3);
+    }
+    .btn-danger:hover:not(:disabled) {
+      box-shadow: 0 6px 20px rgba(239,68,68,.5);
+      transform: translateY(-1px);
+    }
+
+    /* ── Info footer ──────────────────────────────────────────────────────── */
+    .info { font-size: .8rem; color: var(--muted); text-align: center; }
+    .info a { color: var(--accent2); text-decoration: none; }
+
+    /* ── Tickets panel ────────────────────────────────────────────────────── */
+    .tickets-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: var(--shadow);
+    }
+    .tickets-card h3 {
+      font-size: 1rem; font-weight: 600;
+      margin-bottom: 14px;
+      color: var(--accent2);
+      display: flex; gap: 8px; align-items: center;
+    }
+    #ticket-list { font-size: .8rem; color: var(--muted); }
+    .ticket-item {
+      background: rgba(0,0,0,.25);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+    }
+    .ticket-item .tid { color: var(--accent2); font-weight: 600; }
+    .ticket-item .tsev {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 99px;
+      font-size: .7rem; font-weight: 600;
+      margin-left: 6px;
+    }
+    .sev-low      { background: rgba(34,197,94,.15);  color: #22c55e; }
+    .sev-medium   { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .sev-high     { background: rgba(239,68,68,.15);  color: #ef4444; }
+    .sev-critical { background: rgba(239,68,68,.3);   color: #fca5a5; }
+
+    /* ── Config panel ─────────────────────────────────────────────────────── */
+    .config-row {
+      margin-bottom: 20px;
+    }
+    .config-row label {
+      display: block;
+      font-size: .8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .config-row input {
+      width: 100%;
+      background: rgba(0,0,0,.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: .875rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .config-row input:focus { border-color: var(--accent); }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">💧</div>
+    <span class="logo-text">AquaBot</span>
+  </div>
+  <p class="tagline">Gated Community Plumbing Helpdesk · Voice AI</p>
+</div>
+
+<!-- Main card -->
+<div class="card">
+
+  <!-- Config (server URL - editable for local dev) -->
+  <div class="config-row">
+    <label for="server-url">Backend URL (where server.py runs)</label>
+    <input id="server-url" type="text" value="http://localhost:8000"
+           placeholder="http://localhost:8000" />
+  </div>
+  <div class="config-row">
+    <label for="room-name">Room Name</label>
+    <input id="room-name" type="text" value="plumbing-support"
+           placeholder="plumbing-support" />
+  </div>
+
+  <!-- Orb visualizer -->
+  <div class="orb-container">
+    <div class="orb" id="orb"></div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-row">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Not connected</span>
+  </div>
+
+  <!-- Audio status -->
+  <div class="audio-row">
+    <span class="audio-badge" id="audio-badge">Audio: not received</span>
+    <button class="btn btn-primary btn-audio" id="btn-audio" onclick="enableAudio()" disabled>
+      Enable Audio
+    </button>
+  </div>
+
+  <!-- Transcript -->
+  <div class="transcript-box" id="transcript"></div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-connect" onclick="startSession()">
+      🎙️ Start Call
+    </button>
+    <button class="btn btn-danger" id="btn-disconnect" onclick="endSession()" disabled>
+      📵 End Call
+    </button>
+  </div>
+</div>
+
+<!-- Tickets panel -->
+<div class="tickets-card">
+  <h3>🗂️ Logged Tickets <span id="ticket-count" style="color:var(--muted);font-weight:400;font-size:.85rem"></span></h3>
+  <div id="ticket-list">No tickets yet.</div>
+  <button class="btn btn-primary" style="margin-top:14px;flex:none;width:auto;padding:10px 20px;font-size:.8rem"
+          onclick="refreshTickets()">↻ Refresh</button>
+</div>
+
+<p class="info">
+  Powered by <a href="https://pipecat.ai">Pipecat</a> ·
+  <a href="https://livekit.io">LiveKit</a> ·
+  <a href="https://deepgram.com">Deepgram</a> ·
+  <a href="https://groq.com">Groq</a> ·
+  <a href="https://cartesia.ai">Cartesia</a>
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   AquaBot Frontend
+   Uses LiveKit Client JS SDK (loaded from CDN above)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+const { Room, RoomEvent, Track, createLocalAudioTrack, LogLevel } = LivekitClient;
+
+let room = null;
+let localAudioTrack = null;
+let lastRemoteAudioEl = null;
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function setStatus(text, state = '') {
+  document.getElementById('status-text').textContent = text;
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+function setOrb(cls) {
+  const orb = document.getElementById('orb');
+  orb.className = 'orb' + (cls ? ' ' + cls : '');
+}
+
+function setAudioStatus(text, state = '') {
+  const badge = document.getElementById('audio-badge');
+  badge.textContent = text;
+  badge.className = 'audio-badge' + (state ? ' ' + state : '');
+}
+
+function addTranscript(role, text) {
+  const box = document.getElementById('transcript');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `<span class="label">${role === 'user' ? 'You' : '🤖 AquaBot'}:</span>${text}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function serverUrl() {
+  return document.getElementById('server-url').value.replace(/\/$/, '');
+}
+
+// ── Session management ───────────────────────────────────────────────────────
+
+async function startSession() {
+  const roomName = document.getElementById('room-name').value || 'plumbing-support';
+  const base = serverUrl();
+
+  setStatus('Requesting token…', 'connecting');
+  document.getElementById('btn-connect').disabled = true;
+
+  try {
+    // 1. Get user token from our FastAPI server
+    const tokenRes = await fetch(`${base}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity: 'resident-' + Date.now(), room_name: roomName }),
+    });
+    if (!tokenRes.ok) throw new Error(`Token error: ${tokenRes.status}`);
+    const { token, livekit_url } = await tokenRes.json();
+
+    // 2. Ask server to spawn the bot
+    setStatus('Starting bot…', 'connecting');
+    const botRes = await fetch(`${base}/start-bot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room_name: roomName }),
+    });
+    if (!botRes.ok) {
+      const err = await botRes.json();
+      throw new Error(`Bot start error: ${err.detail || botRes.status}`);
+    }
+
+    // 3. Connect to LiveKit room
+    setStatus('Connecting to room…', 'connecting');
+    room = new Room({ adaptiveStream: true, dynacast: true, logLevel: LogLevel.warn });
+
+    // ── Room events ──────────────────────────────────────────────────────────
+    room.on(RoomEvent.Connected, () => {
+      setStatus('Connected – speak now!', 'connected');
+      setOrb('listening');
+      setAudioStatus('Audio: waiting for track', 'warn');
+      document.getElementById('btn-disconnect').disabled = false;
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      setStatus('Disconnected', '');
+      setOrb('');
+      setAudioStatus('Audio: not received');
+      document.getElementById('btn-audio').disabled = true;
+      lastRemoteAudioEl = null;
+      document.getElementById('btn-connect').disabled = false;
+      document.getElementById('btn-disconnect').disabled = true;
+    });
+
+    // Track agent audio to visualise speaking state
+    room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      if (track.kind === Track.Kind.Audio) {
+        // FIX: You MUST append the audio element to the DOM or it gets garbage collected
+        const audioElement = track.attach();
+        audioElement.autoplay = true;
+        audioElement.playsInline = true;
+        audioElement.muted = false;
+        document.body.appendChild(audioElement);
+
+        lastRemoteAudioEl = audioElement;
+        document.getElementById('btn-audio').disabled = false;
+        setAudioStatus('Audio: track received', 'ok');
+        console.log('Remote audio track subscribed from', participant?.identity || 'unknown');
+
+        audioElement.addEventListener('play', () => setAudioStatus('Audio: playing', 'ok'));
+        audioElement.addEventListener('pause', () => setAudioStatus('Audio: paused', 'warn'));
+        audioElement.addEventListener('ended', () => setAudioStatus('Audio: ended', 'warn'));
+        audioElement.addEventListener('error', () => setAudioStatus('Audio: error', 'err'));
+
+        audioElement.play().catch((err) => {
+          console.warn('Autoplay blocked or play failed:', err);
+          setAudioStatus('Audio: autoplay blocked', 'warn');
+        });
+
+        // Simple: flip orb when remote audio is active
+        track.on('audioPlaybackStarted', () => setOrb('speaking'));
+        track.on('audioPlaybackEnded',   () => setOrb('listening'));
+      }
+    });
+
+    // Listen for data messages (transcript) from the agent
+    room.on(RoomEvent.DataReceived, (data, participant) => {
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(data));
+        if (msg.type === 'transcript') {
+          addTranscript(msg.role, msg.text);
+        }
+      } catch (_) { /* not JSON */ }
+    });
+
+    // 4. Connect
+    await room.connect(livekit_url, token);
+
+    // 5. Publish local microphone
+    localAudioTrack = await createLocalAudioTrack({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
+    await room.localParticipant.publishTrack(localAudioTrack);
+
+    addTranscript('agent', 'AquaBot is ready. Please describe your plumbing issue.');
+
+  } catch (err) {
+    console.error(err);
+    setStatus(`Error: ${err.message}`, 'error');
+    setOrb('');
+    document.getElementById('btn-connect').disabled = false;
+    document.getElementById('btn-disconnect').disabled = true;
+  }
+}
+
+async function endSession() {
+  if (localAudioTrack) {
+    localAudioTrack.stop();
+    localAudioTrack = null;
+  }
+  if (room) {
+    await room.disconnect();
+    room = null;
+  }
+  setStatus('Call ended', '');
+  setOrb('');
+  setAudioStatus('Audio: not received');
+  document.getElementById('btn-audio').disabled = true;
+  document.getElementById('btn-connect').disabled = false;
+  document.getElementById('btn-disconnect').disabled = true;
+  // Refresh tickets after call ends
+  setTimeout(refreshTickets, 1000);
+}
+
+async function enableAudio() {
+  if (room && typeof room.startAudio === 'function') {
+    try {
+      await room.startAudio();
+      setAudioStatus('Audio: unlocked', 'ok');
+    } catch (err) {
+      console.warn('room.startAudio failed:', err);
+      setAudioStatus('Audio: unlock failed', 'err');
+    }
+  }
+
+  if (lastRemoteAudioEl) {
+    try {
+      await lastRemoteAudioEl.play();
+      setAudioStatus('Audio: playing', 'ok');
+    } catch (err) {
+      console.warn('Manual play failed:', err);
+      setAudioStatus('Audio: play failed', 'err');
+    }
+  }
+}
+
+// ── Ticket viewer ────────────────────────────────────────────────────────────
+
+async function refreshTickets() {
+  const base = serverUrl();
+  try {
+    const res = await fetch(`${base}/tickets`);
+    if (!res.ok) return;
+    const tickets = await res.json();
+
+    const list = document.getElementById('ticket-list');
+    document.getElementById('ticket-count').textContent = `(${tickets.length})`;
+
+    if (!tickets.length) {
+      list.innerHTML = '<p style="color:var(--muted);font-size:.8rem;font-style:italic">No tickets logged yet.</p>';
+      return;
+    }
+
+    list.innerHTML = tickets.map(t => `
+      <div class="ticket-item">
+        <span class="tid">${t.id}</span>
+        <span class="tsev sev-${t.severity}">${t.severity}</span>
+        <br/>
+        <strong>${t.name}</strong> · ${t.flat}<br/>
+        ${t.issue.replace(/_/g,' ')} @ ${t.location}<br/>
+        <span style="color:var(--muted)">Since: ${t.started_when} &nbsp;|&nbsp; ${new Date(t.timestamp).toLocaleString()}</span>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.warn('Could not fetch tickets:', err.message);
+  }
+}
+
+// Poll tickets every 10 s while page is open
+setInterval(refreshTickets, 10000);
+refreshTickets();
+</script>
+</body>
+</html>
